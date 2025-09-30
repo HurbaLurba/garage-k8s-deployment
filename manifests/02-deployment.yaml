@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: garage-s3-storage
+  namespace: garage-storage
+  labels:
+    app: garage-s3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: garage-s3
+  template:
+    metadata:
+      labels:
+        app: garage-s3
+    spec:
+      # IMPORTANT: Replace with your actual worker node hostname or IP
+      # To find available nodes: kubectl get nodes -o wide
+      nodeSelector:
+        kubernetes.io/hostname: "worker-node-01"
+      
+      containers:
+      - name: garage
+        image: dxflrs/garage:v1.0.0
+        imagePullPolicy: IfNotPresent
+        
+        # Optimized resource limits for high-performance S3 storage
+        # Tested to achieve 32 MiB/s (267 Mbit/s) throughput on 1Gbit connection
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        
+        ports:
+        - containerPort: 3900
+          name: s3-api
+          protocol: TCP
+        - containerPort: 3901
+          name: rpc
+          protocol: TCP
+        - containerPort: 3902
+          name: web
+          protocol: TCP
+        - containerPort: 3903
+          name: admin
+          protocol: TCP
+        
+        env:
+        - name: RUST_LOG
+          value: "garage=info"
+        
+        volumeMounts:
+        - name: garage-data
+          mountPath: /mnt/data
+        - name: garage-meta
+          mountPath: /mnt/meta
+        - name: garage-app
+          mountPath: /etc/garage
+        - name: garage-config
+          mountPath: /etc/garage/garage.toml
+          subPath: garage.toml
+        
+        # Health probes using admin API with bearer token
+        # Replace CHANGE_ME_TO_RANDOM_ADMIN_TOKEN with your actual admin token from ConfigMap
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3903
+            httpHeaders:
+            - name: Authorization
+              value: "Bearer CHANGE_ME_TO_RANDOM_ADMIN_TOKEN_GENERATE_WITH_OPENSSL"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3903
+            httpHeaders:
+            - name: Authorization
+              value: "Bearer CHANGE_ME_TO_RANDOM_ADMIN_TOKEN_GENERATE_WITH_OPENSSL"
+          initialDelaySeconds: 15
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      
+      volumes:
+      # CRITICAL: These hostPath volumes must exist on the selected worker node
+      # Run setup script on the worker node BEFORE deploying:
+      # ssh user@worker-node-01 "sudo mkdir -p /mnt/storage-data/garage/{data,meta,app} && sudo chmod -R 755 /mnt/storage-data/garage"
+      - name: garage-data
+        hostPath:
+          path: /mnt/storage-data/garage/data
+          type: Directory
+      - name: garage-meta
+        hostPath:
+          path: /mnt/storage-data/garage/meta
+          type: Directory
+      - name: garage-app
+        hostPath:
+          path: /mnt/storage-data/garage/app
+          type: Directory
+      - name: garage-config
+        configMap:
+          name: garage-config

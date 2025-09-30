@@ -1,0 +1,35 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: garage-admin-api
+  namespace: garage-storage
+  labels:
+    app: garage-s3
+  annotations:
+    # Performance optimizations
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    
+    # SSL/TLS configuration - replace with your cert-manager issuer
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  # Uncomment and configure TLS if using cert-manager
+  # tls:
+  # - hosts:
+  #   - admin.storage-nas.example.com
+  #   secretName: garage-admin-tls
+  rules:
+  - host: admin.storage-nas.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: garage-s3-service
+            port:
+              number: 3903
